@@ -52,12 +52,6 @@ Leveraging powerful Language Models (LLMs) and open-source intelligence (OSINT) 
 - **GitHub**: [LaughingCryingFace](https://github.com/cycloarcane/laughingcryingface)
 - **Email**: [cycloarkane@gmail.com](mailto:cycloarkane@gmail.com)
 
-### 📂 Project Structure
-
-- **/src** - Contains the main application code.
-- **/docs** - Documentation and user guides.
-- **LICENSE** - Project license and usage terms.
-
 ### 📥 Installation
 
 To install the dependencies, run:
