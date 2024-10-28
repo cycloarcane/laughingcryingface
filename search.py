@@ -2,6 +2,7 @@
 from duckduckgo_search import DDGS
 import re
 import requests
+import os
 
 class OSINTSearch:
     def __init__(self):
@@ -25,9 +26,13 @@ class OSINTSearch:
             for result in results:
                 file.write(f"{result['title']}\n{result['href']}\n{result['body']}\n\n")
         print(f"Results saved to {filename}")
-        return filename  # Return filename for use in LLM processing
+        return filename
 
     def process_with_llm(self, filename, endpoint="http://127.0.0.1:5000/v1/chat/completions"):
+        if os.stat(filename).st_size == 0:  # Check if the file is empty
+            print(f"{filename} is empty. Skipping LLM processing.")
+            return None
+
         try:
             with open(filename, "r") as file:
                 content = file.read()
@@ -44,20 +49,29 @@ class OSINTSearch:
                         "content": content
                     }
                 ],
-                "max_tokens": 500,
+                "max_tokens": 1500,
             }
 
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer YOUR_API_KEY"  # Replace with actual token setup if required
+                "Authorization": f"Bearer YOUR_API_KEY"
             }
 
             response = requests.post(endpoint, json=data, headers=headers)
             response.raise_for_status()
             
             result = response.json()
-            print("LLM Response:", result["choices"][0]["message"]["content"])
-            return result["choices"][0]["message"]["content"]
+            llm_output = result["choices"][0]["message"]["content"]
+            print("LLM Response:", llm_output)
+
+            # Save the output to a markdown file
+            md_filename = filename.replace(".txt", ".md")
+            with open(md_filename, "w") as md_file:
+                md_file.write(f"# Analysis for {filename}\n\n")
+                md_file.write(llm_output)
+            print(f"LLM output saved to {md_filename}")
+
+            return llm_output
 
         except (IOError, requests.RequestException) as e:
             print(f"Error processing with LLM: {e}")
