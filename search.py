@@ -8,7 +8,7 @@ class OSINTSearch:
     def __init__(self):
         self.search_engine = DDGS()
 
-    def search(self, query, site=None, max_results=10):
+    def search(self, query, site=None, max_results=100):
         if site:
             query = f"site:{site} {query}"
         results = self.search_engine.text(query, max_results=max_results)
@@ -42,14 +42,14 @@ class OSINTSearch:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Look at the provided information and distill key information such as usernames, email addresses, locations, used services etc and organise them under headings."
+                        "content": "Look at the provided information and distill key information such as usernames, email addresses, locations, used services etc and organise them under headings. Focus on fining additional information that could be used to perform futher iterative searches. You can provide information you are unsure about in a section called 'possbile leads:'."
                     },
                     {
                         "role": "user",
                         "content": content
                     }
                 ],
-                "max_tokens": 1500,
+                "max_tokens": 8000,
             }
 
             headers = {
