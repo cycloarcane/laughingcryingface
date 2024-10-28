@@ -2,77 +2,123 @@
 from duckduckgo_search import DDGS
 import re
 import requests
-import os
+from pathlib import Path
+import logging
 
-class OSINTSearch:
-    def __init__(self):
+class DossierBuilder:
+    def __init__(self, llm_url="http://127.0.0.1:5000/v1/chat/completions"):
         self.search_engine = DDGS()
+        self.llm_url = llm_url
+        
+        # Setup logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(message)s'
+        )
+        self.logger = logging.getLogger(__name__)
 
     def search(self, query, site=None, max_results=100):
-        if site:
-            query = f"site:{site} {query}"
-        results = self.search_engine.text(query, max_results=max_results)
+        """Perform OSINT search and return filtered results"""
+        try:
+            # Build search query
+            search_query = f"site:{site} {query}" if site else query
+            self.logger.info(f"Searching for: {search_query}")
+            
+            # Get results
+            results = self.search_engine.text(search_query, max_results=max_results)
+            
+            # Filter results that contain the query
+            filtered_results = [
+                result for result in results 
+                if query.lower() in (result['title'] + result['body'] + result['href']).lower()
+            ]
+            
+            self.logger.info(f"Found {len(filtered_results)} relevant results")
+            return filtered_results
+            
+        except Exception as e:
+            self.logger.error(f"Search failed: {str(e)}")
+            return []
+
+    def save_raw_data(self, results, query):
+        """Save raw search results to a text file"""
+        # Create results directory if it doesn't exist
+        Path("results").mkdir(exist_ok=True)
         
-        filtered_results = [
-            result for result in results 
-            if query.lower() in (result['title'] + result['body'] + result['href']).lower()
-        ]
-        return filtered_results
-
-    def save_results(self, results, query, filename_suffix=".txt"):
+        # Create safe filename
         safe_query = re.sub(r'[^\w\-_\. ]', '_', query)
-        filename = f"{safe_query}{filename_suffix}"
-        with open(filename, "w") as file:
-            for result in results:
-                file.write(f"{result['title']}\n{result['href']}\n{result['body']}\n\n")
-        print(f"Results saved to {filename}")
-        return filename
-
-    def process_with_llm(self, filename, endpoint="http://127.0.0.1:5000/v1/chat/completions"):
-        if os.stat(filename).st_size == 0:  # Check if the file is empty
-            print(f"{filename} is empty. Skipping LLM processing.")
+        filepath = Path("results") / f"{safe_query}_raw.txt"
+        
+        try:
+            with filepath.open("w", encoding='utf-8') as file:
+                for result in results:
+                    file.write(f"Title: {result['title']}\n")
+                    file.write(f"URL: {result['href']}\n")
+                    file.write(f"Content: {result['body']}\n\n")
+                    
+            self.logger.info(f"Raw data saved to {filepath}")
+            return filepath
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save raw data: {str(e)}")
             return None
 
+    def generate_dossier(self, filepath, query):
+        """Generate a markdown dossier using local LLM"""
         try:
-            with open(filename, "r") as file:
+            # Read the raw data
+            with filepath.open('r', encoding='utf-8') as file:
                 content = file.read()
 
+            # Prepare the prompt for the LLM
+            prompt = f"""Analyze the following OSINT data for {query} and create a detailed dossier.
+            Focus on:
+            1. Key identifiers (usernames, emails, etc.)
+            2. Associated platforms and services (include links)
+            3. Potential locations
+            4. Connected identities
+            5. Possible additional search vectors
+            
+            Format the response in markdown with appropriate sections.
+            
+            Data to analyze:
+            {content}"""
+
+            # Prepare API request
             data = {
                 "model": "gpt-3.5-turbo",
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": "Look at the provided information and distill key information such as usernames, email addresses, locations, used services etc and organise them under headings. Focus on fining additional information that could be used to perform futher iterative searches. You can provide information you are unsure about in a section called 'possbile leads:'."
-                    },
-                    {
-                        "role": "user",
-                        "content": content
-                    }
+                    {"role": "system", "content": "You are an OSINT analyst creating a detailed dossier."},
+                    {"role": "user", "content": prompt}
                 ],
-                "max_tokens": 8000,
+                "max_tokens": 8000
             }
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer YOUR_API_KEY"
-            }
-
-            response = requests.post(endpoint, json=data, headers=headers)
+            # Call local LLM
+            self.logger.info("Generating dossier using LLM...")
+            response = requests.post(
+                self.llm_url,
+                json=data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
             response.raise_for_status()
             
-            result = response.json()
-            llm_output = result["choices"][0]["message"]["content"]
-            print("LLM Response:", llm_output)
-
-            # Save the output to a markdown file
-            md_filename = filename.replace(".txt", ".md")
-            with open(md_filename, "w") as md_file:
-                md_file.write(f"# Analysis for {filename}\n\n")
-                md_file.write(llm_output)
-            print(f"LLM output saved to {md_filename}")
-
-            return llm_output
-
-        except (IOError, requests.RequestException) as e:
-            print(f"Error processing with LLM: {e}")
+            # Extract and save dossier
+            dossier_content = response.json()["choices"][0]["message"]["content"]
+            dossier_path = Path("results") / f"{query}_dossier.md"
+            
+            with dossier_path.open('w', encoding='utf-8') as file:
+                file.write(f"# OSINT Dossier: {query}\n\n")
+                file.write(f"*Generated on: {Path(filepath).stat().st_mtime}*\n\n")
+                file.write(dossier_content)
+                
+            self.logger.info(f"Dossier saved to {dossier_path}")
+            return dossier_path
+            
+        except requests.RequestException as e:
+            self.logger.error(f"LLM processing failed: {str(e)}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Dossier generation failed: {str(e)}")
             return None
