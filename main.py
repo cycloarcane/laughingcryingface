@@ -1,5 +1,5 @@
 # main.py
-from search2 import DossierBuilder
+from search import DossierBuilder
 
 def main():
     print("OSINT Dossier Builder")
