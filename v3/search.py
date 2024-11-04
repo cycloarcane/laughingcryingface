@@ -12,8 +12,8 @@ import json
 
 class DossierBuilder:
     def __init__(self, llm_url="http://127.0.0.1:5000/v1/chat/completions",
-                 max_page_tokens: int = 2000,
-                 max_dossier_tokens: int = 8000):
+                 max_page_tokens: int = 4000,
+                 max_dossier_tokens: int = 16000):
         self.search_engine = DDGS()
         self.llm_url = llm_url
         self.max_page_tokens = max_page_tokens
@@ -115,7 +115,7 @@ class DossierBuilder:
             6. Platform usage or digital footprint
             7. Professional or educational history
             
-            Provide only factual information found in the content. Format as clear, concise bullet points.
+            Provide only factual information found in the content. Format as clear, concise bullet points. If information is not found in the content don't reference that bullet point or say it wasn't found, just skip it.
             
             Content to analyze:
             {content[:8000]}  # Limit content length for LLM
@@ -157,10 +157,11 @@ class DossierBuilder:
         distilled_path = Path("results") / f"{safe_query}_distilled.json"
         
         processed_data = []
+        result_number = 1  # Initialize counter
         
         for result in results:
             url = result['href']
-            self.logger.info(f"Processing: {url}")
+            self.logger.info(f"Processing result {result_number}: {url}")
             
             # Skip if URL seems invalid
             if not urlparse(url).scheme:
@@ -171,11 +172,26 @@ class DossierBuilder:
             if content:
                 analysis = self.analyze_page_content(content, url, main_query)
                 if analysis:
+                    # Add result number to the analysis
+                    analysis.update({
+                        "result_number": result_number,
+                        "original_title": result.get('title', '')
+                    })
+                    
                     processed_data.append(analysis)
                     
                     # Save progress after each successful analysis
                     with distilled_path.open('w', encoding='utf-8') as f:
-                        json.dump(processed_data, f, indent=2)
+                        json.dump({
+                            "metadata": {
+                                "target": main_query,
+                                "total_results_processed": result_number,
+                                "last_updated": str(Path(distilled_path).stat().st_mtime if distilled_path.exists() else None)
+                            },
+                            "results": processed_data
+                        }, f, indent=2)
+                    
+                    result_number += 1  # Increment counter only for successfully processed results
                     
             # Be nice to servers
             sleep(2)
@@ -200,7 +216,9 @@ class DossierBuilder:
             5. Potential intelligence gaps
             6. Weak evidence, still worth mentioning but be cautious about validity
             
-            Format the response in markdown with appropriate sections.
+            Format the response in markdown with appropriate sections. Include links to relevant sources like website. Also Include contact details.
+
+            A key note to mention is that if for example one person is in the UK and one is in America at the same time, perhaps they are not the same person and information obout these different people should be seperated.
             
             Analyzed Data:
             {json.dumps(distilled_data, indent=2)}"""
