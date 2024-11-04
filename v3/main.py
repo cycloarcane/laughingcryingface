@@ -17,18 +17,28 @@ def process_single_target(args: argparse.Namespace, target: str, additional_term
         
         print(f"\nProcessing target: {target}")
         
-        # Perform initial search
-        print("Performing initial search...")
-        results = builder.search(target, additional_terms, args.site, args.max_results)
-        
-        if not results:
-            print(f"No results found for {target}")
-            return
+        # If distilled results file is provided, skip to dossier generation
+        if args.load_distilled:
+            distilled_path = Path(args.load_distilled)
+            if not distilled_path.exists():
+                print(f"Error: Distilled results file not found: {distilled_path}")
+                return
+                
+            print(f"Loading existing distilled results from: {distilled_path}")
             
-        # Process each result
-        print("Processing search results and analyzing web pages...")
-        print("This may take some time. Progress will be saved after each page.")
-        distilled_path = builder.process_search_results(results, target)
+        else:
+            # Perform initial search
+            print("Performing initial search...")
+            results = builder.search(target, additional_terms, args.site, args.max_results)
+            
+            if not results:
+                print(f"No results found for {target}")
+                return
+                
+            # Process each result
+            print("Processing search results and analyzing web pages...")
+            print("This may take some time. Progress will be saved after each page.")
+            distilled_path = builder.process_search_results(results, target)
         
         # Generate final dossier
         print("Generating final comprehensive dossier...")
@@ -36,7 +46,8 @@ def process_single_target(args: argparse.Namespace, target: str, additional_term
         
         if dossier_path:
             print(f"Dossier successfully generated: {dossier_path}")
-            print(f"Distilled data saved to: {distilled_path}")
+            if not args.load_distilled:
+                print(f"Distilled data saved to: {distilled_path}")
             print("Done!")
         else:
             print(f"Error: Failed to generate final dossier for {target}")
@@ -73,12 +84,41 @@ def save_batch_summary(targets: List[str], args: argparse.Namespace):
             "page_tokens": args.page_tokens,
             "dossier_tokens": args.dossier_tokens,
             "site_restriction": args.site,
-            "targets": targets
+            "targets": targets,
+            "using_existing_distilled": bool(args.load_distilled)
         }
     }
     
     with open("results/batch_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
+
+def validate_distilled_file(file_path: str) -> bool:
+    """Validate the structure of a distilled results file"""
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+            
+        # Check for required structure
+        if not isinstance(data, dict):
+            return False
+            
+        required_keys = {"metadata", "results"}
+        if not all(key in data for key in required_keys):
+            return False
+            
+        if not isinstance(data["results"], list):
+            return False
+            
+        # Check if results have required fields
+        for result in data["results"]:
+            required_result_keys = {"result_number", "url", "analysis"}
+            if not all(key in result for key in required_result_keys):
+                return False
+                
+        return True
+        
+    except (json.JSONDecodeError, OSError):
+        return False
 
 def main():
     parser = argparse.ArgumentParser(
@@ -95,6 +135,9 @@ Examples:
   With site restriction:
     python main.py -t username123 -s twitter.com
     
+  Using existing distilled results:
+    python main.py -t username123 --load-distilled results/username123_distilled.json
+    
 Note: The targets file should contain one target identifier per line.
 """
     )
@@ -104,7 +147,7 @@ Note: The targets file should contain one target identifier per line.
     input_group.add_argument("-t", "--target", help="Single target identifier")
     input_group.add_argument("-f", "--file", help="File containing target identifiers (one per line)")
     
-    parser.add_argument("-m", "--max-results", type=int, default=25,
+    parser.add_argument("-m", "--max-results", type=int, default=100,
                         help="Maximum number of search results to process (default: 100)")
     parser.add_argument("-p", "--page-tokens", type=int, default=2000,
                         help="Maximum tokens for page analysis (default: 2000)")
@@ -113,8 +156,16 @@ Note: The targets file should contain one target identifier per line.
     parser.add_argument("-s", "--site", help="Restrict search to specific site (e.g., twitter.com)")
     parser.add_argument("--parallel", action="store_true",
                         help="Enable parallel processing for batch targets")
+    parser.add_argument("--load-distilled", help="Path to existing distilled results JSON file")
     
     args = parser.parse_args()
+
+    # Validate distilled results file if provided
+    if args.load_distilled:
+        if not validate_distilled_file(args.load_distilled):
+            print("Error: Invalid or malformed distilled results file")
+            print("File must contain 'metadata' and 'results' sections with proper structure")
+            sys.exit(1)
 
     # Create results directory
     Path("results").mkdir(exist_ok=True)
@@ -125,6 +176,11 @@ Note: The targets file should contain one target identifier per line.
             additional_terms = get_additional_terms()
             process_single_target(args, args.target, additional_terms)
         else:
+            if args.load_distilled:
+                print("Warning: Batch processing with existing distilled results is not supported")
+                print("Please use single target mode with --load-distilled option")
+                sys.exit(1)
+                
             targets = load_targets_file(args.file)
             print(f"Loaded {len(targets)} targets from {args.file}")
             
