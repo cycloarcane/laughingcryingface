@@ -205,31 +205,84 @@ class DossierBuilder:
             with distilled_path.open('r', encoding='utf-8') as f:
                 distilled_data = json.load(f)
 
-            prompt = f"""Create a comprehensive intelligence dossier for {main_query} using the following analyzed data
-            from multiple sources. Consider the context terms: {', '.join(additional_terms)}
-
-            Focus on:
-            1. Cross-referencing and verifying information across sources
-            2. Identifying patterns and connections
-            3. Timeline construction
-            4. Reliability assessment of information
-            5. Potential intelligence gaps
-            6. Weak evidence, still worth mentioning but be cautious about validity
+            # Calculate statistics for prompt context
+            total_sources = len(distilled_data["results"])
+            domains = set(urlparse(result["url"]).netloc for result in distilled_data["results"])
             
-            Format the response in markdown with appropriate sections. Include links to relevant sources like website. Also Include contact details.
+            prompt = f"""Create a comprehensive intelligence dossier for target '{main_query}' using data from {total_sources} sources across {len(domains)} distinct domains.
+            Additional context terms: {', '.join(additional_terms)}
 
-            A key note to mention is that if for example one person is in the UK and one is in America at the same time, perhaps they are not the same person and information obout these different people should be seperated.
-            
-            Analyzed Data:
+            Generate an extensive, detailed analysis that thoroughly covers ALL available information. You have up to {self.max_dossier_tokens} tokens available - use them to provide the most comprehensive dossier possible.
+
+            Structure the dossier with the following sections, providing extensive detail for each:
+
+            1. EXECUTIVE SUMMARY
+            - High-confidence key findings
+            - Reliability assessment of sources
+            - Major intelligence gaps
+
+            2. IDENTITY AND BACKGROUND
+            - Core identifiers and accounts
+            - Biographical information
+            - Professional/educational history
+            - Location history and geographic associations
+
+            3. DETAILED TIMELINE
+            - Chronological analysis of all dated events and activities
+            - Pattern analysis across time periods
+
+            4. ASSOCIATIONS AND RELATIONSHIPS
+            - Personal connections
+            - Professional networks
+            - Organizational affiliations
+            - Platform and service usage
+
+            5. TECHNICAL FOOTPRINT
+            - Digital platforms and services
+            - Technical indicators
+            - Online behavior patterns
+            - Account correlation analysis
+
+            6. GEOGRAPHIC ANALYSIS
+            - Confirmed locations
+            - Probable locations based on evidence
+            - Travel patterns if apparent
+            - Geographic points of interest
+
+            7. SOURCE ANALYSIS
+            - Detailed evaluation of each significant source
+            - Cross-reference patterns
+            - Conflicting information assessment
+            - Source reliability matrix
+
+            8. INTELLIGENCE GAPS AND UNCERTAINTIES
+            - Identified information gaps
+            - Conflicting data points
+            - Alternative hypotheses
+            - Recommended additional collection vectors
+
+            For each section:
+            - Provide extensive detail
+            - Include specific examples and evidence
+            - Cross-reference information across sources
+            - Assess confidence levels
+            - Note contradictions or uncertainties
+            - Cite source numbers [Result #X] for key findings
+
+            Raw Data for Analysis:
             {json.dumps(distilled_data, indent=2)}"""
 
             data = {
                 "model": "gpt-3.5-turbo",
                 "messages": [
-                    {"role": "system", "content": "You are an OSINT analyst creating a detailed intelligence dossier."},
+                    {"role": "system", "content": """You are an expert OSINT analyst creating detailed intelligence dossiers.
+                    Your task is to create the most comprehensive analysis possible using all available token space.
+                    Include specific details, examples, and evidence rather than general statements.
+                    Always cite sources using [Result #X] notation."""},
                     {"role": "user", "content": prompt}
                 ],
-                "max_tokens": self.max_dossier_tokens
+                "max_tokens": self.max_dossier_tokens,
+                "temperature": 0.7  # Add some variability to encourage more detailed responses
             }
 
             response = requests.post(
@@ -241,13 +294,31 @@ class DossierBuilder:
             response.raise_for_status()
             
             dossier_content = response.json()["choices"][0]["message"]["content"]
+            
+            # Add metadata header to dossier
+            metadata_header = f"""# OSINT Dossier: {main_query}
+
+*Investigation Details:*
+- Target: `{main_query}`
+- Search Context: {', '.join(additional_terms)}
+- Sources Analyzed: {total_sources}
+- Distinct Domains: {len(domains)}
+- Generation Date: {Path(distilled_path).stat().st_mtime}
+- Token Limit: {self.max_dossier_tokens}
+
+---
+
+"""
+            
             dossier_path = Path("results") / f"{main_query}_final_dossier.md"
             
             with dossier_path.open('w', encoding='utf-8') as f:
-                f.write(f"# OSINT Dossier: {main_query}\n\n")
-                f.write(f"*Search Context: {', '.join(additional_terms)}*\n\n")
-                f.write(f"*Generated on: {Path(distilled_path).stat().st_mtime}*\n\n")
+                f.write(metadata_header)
                 f.write(dossier_content)
+            
+            # Log token usage estimation
+            approx_tokens = len(dossier_content.split()) * 1.3  # Rough estimation
+            self.logger.info(f"Estimated dossier token usage: {int(approx_tokens)} of {self.max_dossier_tokens} available")
             
             return dossier_path
             
