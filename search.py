@@ -305,7 +305,9 @@ class DossierBuilder:
             )
             response.raise_for_status()
             
-            dossier_content = response.json()["choices"][0]["message"]["content"]
+            # Get the raw dossier content and strip think tokens
+            raw_dossier_content = response.json()["choices"][0]["message"]["content"]
+            dossier_content = self._strip_think_tokens(raw_dossier_content)
             
             # Add metadata header to dossier
             metadata_header = f"""# OSINT Dossier: {main_query}
