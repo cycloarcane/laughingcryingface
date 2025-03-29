@@ -13,11 +13,13 @@ import json
 class DossierBuilder:
     def __init__(self, llm_url="http://127.0.0.1:5000/v1/chat/completions",
                  max_page_tokens: int = 4000,
-                 max_dossier_tokens: int = 16000):
+                 max_dossier_tokens: int = 16000,
+                 timeout: int = 60):
         self.search_engine = DDGS()
         self.llm_url = llm_url
         self.max_page_tokens = max_page_tokens
         self.max_dossier_tokens = max_dossier_tokens
+        self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -134,7 +136,7 @@ class DossierBuilder:
                 self.llm_url,
                 json=data,
                 headers={"Content-Type": "application/json"},
-                timeout=60
+                timeout=self.timeout
             )
             response.raise_for_status()
             

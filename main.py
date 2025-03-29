@@ -12,7 +12,8 @@ def process_single_target(args: argparse.Namespace, target: str, additional_term
     try:
         builder = DossierBuilder(
             max_page_tokens=args.page_tokens,
-            max_dossier_tokens=args.dossier_tokens
+            max_dossier_tokens=args.dossier_tokens,
+            timeout=args.timeout
         )
         
         print(f"\nProcessing target: {target}")
@@ -138,6 +139,9 @@ Examples:
   Using existing distilled results:
     python main.py -t username123 --load-distilled results/username123_distilled.json
     
+  With custom timeout:
+    python main.py -t username123 --timeout 120
+    
 Note: The targets file should contain one target identifier per line.
 """
     )
@@ -157,6 +161,8 @@ Note: The targets file should contain one target identifier per line.
     parser.add_argument("--parallel", action="store_true",
                         help="Enable parallel processing for batch targets")
     parser.add_argument("--load-distilled", help="Path to existing distilled results JSON file")
+    parser.add_argument("--timeout", type=int, default=60,
+                        help="Timeout in seconds for LLM API calls (default: 60)")
     
     args = parser.parse_args()
 
