@@ -102,6 +102,14 @@ class DossierBuilder:
             self.logger.error(f"Failed to fetch {url}: {str(e)}")
             return None
 
+    def _strip_think_tokens(self, text: str) -> str:
+        """Remove <think></think> tokens and their content from text"""
+        # Remove any <think> tags and their content
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        # Clean up any extra whitespace that might be left
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        return text.strip()
+
     def analyze_page_content(self, content: str, url: str, main_query: str) -> Optional[Dict]:
         """Analyze a single webpage's content using LLM"""
         try:
@@ -140,11 +148,13 @@ class DossierBuilder:
             )
             response.raise_for_status()
             
-            analysis = response.json()["choices"][0]["message"]["content"]
+            # Get the raw analysis and strip think tokens
+            raw_analysis = response.json()["choices"][0]["message"]["content"]
+            cleaned_analysis = self._strip_think_tokens(raw_analysis)
             
             return {
                 "url": url,
-                "analysis": analysis,
+                "analysis": cleaned_analysis,
                 "timestamp": Path().stat().st_mtime
             }
             
