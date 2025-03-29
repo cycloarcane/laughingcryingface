@@ -301,7 +301,7 @@ class DossierBuilder:
                 self.llm_url,
                 json=data,
                 headers={"Content-Type": "application/json"},
-                timeout=300
+                timeout=self.timeout
             )
             response.raise_for_status()
             
